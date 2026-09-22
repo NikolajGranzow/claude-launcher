@@ -126,33 +126,16 @@ function Remove-Project {
     return $updated
 }
 
-function Start-ClaudeIn {
+function Test-ProjectFolder {
     param([object]$Project)
 
-    if (-not (Test-Path -LiteralPath $Project.Path -PathType Container)) {
-        Write-Host ""
-        Write-Host "The folder is gone: $($Project.Path)" -ForegroundColor Red
-        Write-Host "Use [R] to remove it, or [A] to add it again at its new location." -ForegroundColor Yellow
-        Read-Host "Press Enter to go back" | Out-Null
-        return $false
-    }
+    if (Test-Path -LiteralPath $Project.Path -PathType Container) { return $true }
 
-    Set-Location -LiteralPath $Project.Path
     Write-Host ""
-    Write-Host "Starting Claude Code in: $($Project.Path)" -ForegroundColor Green
-    Write-Host ""
-
-    # -c resumes the most recent conversation in this folder. With no prior session it
-    # exits non-zero instead of starting fresh, so fall back to a new session.
-    claude -c
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host ""
-        Write-Host "No previous conversation here - starting a new session..." -ForegroundColor Yellow
-        Write-Host ""
-        claude
-    }
-
-    return $true
+    Write-Host "The folder is gone: $($Project.Path)" -ForegroundColor Red
+    Write-Host "Use [R] to remove it, or [A] to add it again at its new location." -ForegroundColor Yellow
+    Read-Host "Press Enter to go back" | Out-Null
+    return $false
 }
 
 # --- main loop --------------------------------------------------------------
@@ -169,8 +152,9 @@ if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
 # @(...) on every assignment below: PowerShell unrolls a single-element array on return,
 # which would otherwise turn a one-project config into a bare object.
 $projects = @(Read-ProjectConfig -Path $ConfigPath)
+$selected = $null
 
-while ($true) {
+while ($null -eq $selected) {
     Clear-Host
     Write-Host ""
     Write-Host "==================================="
@@ -206,7 +190,8 @@ while ($true) {
         '^\d+$' {
             $index = [int]$choice
             if ($index -ge 1 -and $index -le $projects.Count) {
-                if (Start-ClaudeIn -Project $projects[$index - 1]) { exit 0 }
+                $candidate = $projects[$index - 1]
+                if (Test-ProjectFolder -Project $candidate) { $selected = $candidate }
                 continue
             }
             Write-Host "No project with that number." -ForegroundColor Red
@@ -219,4 +204,28 @@ while ($true) {
             continue
         }
     }
+}
+
+# --- launch -----------------------------------------------------------------
+#
+# Keep these two claude calls at the top level of the script. If they run inside a
+# function whose output is consumed - if (Start-Claude ...), $x = Start-Claude, or a
+# pipeline - PowerShell captures the native command's stdout. Claude Code then sees a
+# redirected stdout, assumes --print mode, and exits with "Input must be provided
+# either through stdin or as a prompt argument" instead of starting an interactive
+# session.
+
+Set-Location -LiteralPath $selected.Path
+Write-Host ""
+Write-Host "Starting Claude Code in: $($selected.Path)" -ForegroundColor Green
+Write-Host ""
+
+# -c resumes the most recent conversation in this folder. With no prior session it
+# exits non-zero instead of starting fresh, so fall back to a new session.
+claude -c
+if ($LASTEXITCODE -ne 0) {
+    Write-Host ""
+    Write-Host "No previous conversation here - starting a new session..." -ForegroundColor Yellow
+    Write-Host ""
+    claude
 }
