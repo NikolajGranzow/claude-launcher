@@ -126,6 +126,25 @@ function Remove-Project {
     return $updated
 }
 
+function Test-ConversationHistory {
+    <#
+        Claude Code keys every conversation to the directory it was started in and
+        stores it as ~\.claude\projects\<path, ':' and '\' swapped for '-'>\*.jsonl.
+
+        $true means there is definitely something for "claude -c" to resume. $false
+        means "nothing found" - which also covers "the layout is not what we expect",
+        so the caller still gives -c the first go and a wrong guess costs nothing.
+    #>
+    param([string]$ProjectPath)
+
+    $store = Join-Path $env:USERPROFILE '.claude\projects'
+    $folder = Join-Path $store ($ProjectPath -replace '[:\\]', '-')
+    if (-not (Test-Path -LiteralPath $folder -PathType Container)) { return $false }
+
+    $sessions = @(Get-ChildItem -LiteralPath $folder -Filter '*.jsonl' -File -ErrorAction SilentlyContinue)
+    return $sessions.Count -gt 0
+}
+
 function Test-ProjectFolder {
     param([object]$Project)
 
@@ -208,24 +227,36 @@ while ($null -eq $selected) {
 
 # --- launch -----------------------------------------------------------------
 #
-# Keep these two claude calls at the top level of the script. If they run inside a
+# Keep every claude call below at the top level of the script. If one runs inside a
 # function whose output is consumed - if (Start-Claude ...), $x = Start-Claude, or a
 # pipeline - PowerShell captures the native command's stdout. Claude Code then sees a
 # redirected stdout, assumes --print mode, and exits with "Input must be provided
 # either through stdin or as a prompt argument" instead of starting an interactive
 # session.
 
+# Check before launching, while the exit code still means something we can trust.
+$hasHistory = Test-ConversationHistory -ProjectPath $selected.Path
+
 Set-Location -LiteralPath $selected.Path
 Write-Host ""
 Write-Host "Starting Claude Code in: $($selected.Path)" -ForegroundColor Green
 Write-Host ""
 
-# -c resumes the most recent conversation in this folder. With no prior session it
-# exits non-zero instead of starting fresh, so fall back to a new session.
-claude -c
-if ($LASTEXITCODE -ne 0) {
-    Write-Host ""
-    Write-Host "No previous conversation here - starting a new session..." -ForegroundColor Yellow
-    Write-Host ""
-    claude
+if ($hasHistory) {
+    # Something is there to resume, so a non-zero exit is the resumed session itself
+    # ending - a crash, or just Ctrl+C. Starting a second Claude on top of that would
+    # drop the user into an empty prompt they never asked for, so this branch has no
+    # fallback: -c gets to fail loudly instead.
+    claude -c
+} else {
+    # Nothing found to resume, so -c should hit "no conversation to continue" and exit
+    # non-zero without ever opening a session - which makes falling back safe here.
+    # -c still goes first, so an unrecognised store layout just resumes as normal.
+    claude -c
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host ""
+        Write-Host "No previous conversation here - starting a new session..." -ForegroundColor Yellow
+        Write-Host ""
+        claude
+    }
 }
