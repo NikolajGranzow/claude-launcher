@@ -1,6 +1,8 @@
 # claude-launcher
 
-A single PowerShell script that shows your projects in a menu, then starts [Claude Code](https://claude.com/claude-code) in the one you pick — resuming the last conversation in that folder if there is one.
+Pick a project from a menu and land straight back in the Claude Code conversation you were having there — no `cd`, no lost context.
+
+Without it, picking up yesterday's work means opening PowerShell, navigating to the right folder, and starting Claude Code — and a plain `claude` opens a **blank** session that knows nothing about what you did last time. This launcher does the navigating for you and resumes that folder's most recent conversation instead.
 
 No install, no dependencies, no GUI. One `.ps1` file and a shortcut you can pin to the taskbar.
 
@@ -55,7 +57,21 @@ Pick a number and the script changes into that folder and runs:
 claude -c
 ```
 
-`-c` resumes the most recent conversation in that directory. If there is no previous session, `claude -c` exits with an error instead of starting fresh — so the script catches that and starts a new session for you.
+`-c` is Claude Code's "continue" flag: it reopens the **most recent conversation started in the current directory**, with the full history and everything Claude had already worked out about your code still in context. You pick up mid-thread — no re-explaining the project, no repeating what you tried yesterday.
+
+So the two steps you'd otherwise do by hand — `cd` to the project, then remember to pass `-c` — both happen for you. Pressing `1` on the taskbar shortcut is the whole workflow.
+
+### What you get back
+
+Conversations are per-folder, and Claude Code stores them itself under `%USERPROFILE%\.claude\projects\`. The launcher doesn't keep any history of its own; it just makes sure Claude Code is started in the right place with the right flag, so it finds the session that belongs to that project.
+
+That means:
+
+- Each project resumes **its own** last conversation — switching between them in the menu never mixes them up.
+- A conversation survives closing the window, and reboots. Come back a week later and it's still there.
+- First time in a new project there's nothing to resume, so `claude -c` exits with an error instead of starting fresh. The script catches that and starts a new session for you — you'll see *"No previous conversation here - starting a new session..."* and land in an empty prompt. From then on that project resumes like the rest.
+
+Want a clean slate in a project that already has history? Quit the launcher and run plain `claude` in that folder — or type `/clear` in the running session.
 
 ## Your project list
 
