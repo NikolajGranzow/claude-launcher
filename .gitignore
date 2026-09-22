@@ -1,0 +1,5 @@
+# Local project list, if anyone keeps it beside the script
+.claude-launcher.json
+
+# Shortcuts created by Install-Shortcut.ps1
+*.lnk
