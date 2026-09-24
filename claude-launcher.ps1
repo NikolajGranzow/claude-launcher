@@ -35,14 +35,34 @@ function Read-ProjectConfig {
         return @()
     }
 
-    # ConvertFrom-Json hands back a bare object when the file holds a single entry.
-    return @($data | Where-Object { $_ -and $_.Path })
+    return @(ConvertTo-ProjectList $data)
+}
+
+function ConvertTo-ProjectList {
+    <#
+        Flattens anything that looks like a project list into plain Name/Path objects.
+        Windows PowerShell 5.1 can wrap an array in a PSObject, which ConvertTo-Json then
+        writes as {"value": [...], "Count": n} - older configs may contain that shape.
+    #>
+    param([object[]]$Items)
+
+    foreach ($item in $Items) {
+        if ($null -eq $item) { continue }
+        if ($item -is [System.Collections.IEnumerable] -and $item -isnot [string]) {
+            ConvertTo-ProjectList @($item)
+        } elseif ($item.Path) {
+            [pscustomobject]@{ Name = [string]$item.Name; Path = [string]$item.Path }
+        } elseif ($null -ne $item.value) {
+            ConvertTo-ProjectList @($item.value)
+        }
+    }
 }
 
 function Save-ProjectConfig {
     param([object[]]$Projects, [string]$Path)
 
-    $json = ConvertTo-Json -InputObject @($Projects) -Depth 3
+    $clean = [object[]]@(ConvertTo-ProjectList $Projects)
+    $json = ConvertTo-Json -InputObject $clean -Depth 3
     # Force array syntax so a one-project config still round-trips as a list.
     if (-not $json.TrimStart().StartsWith('[')) { $json = "[$json]" }
     Set-Content -LiteralPath $Path -Value $json -Encoding UTF8
@@ -90,7 +110,7 @@ function Add-Project {
     $name = (Read-Host "Name [$default]").Trim()
     if ([string]::IsNullOrWhiteSpace($name)) { $name = $default }
 
-    $updated = @($Projects) + [pscustomobject]@{ Name = $name; Path = $folder }
+    $updated = @(ConvertTo-ProjectList (@($Projects) + [pscustomobject]@{ Name = $name; Path = $folder }))
     Save-ProjectConfig -Projects $updated -Path $Path
 
     Write-Host "Added '$name'." -ForegroundColor Green
